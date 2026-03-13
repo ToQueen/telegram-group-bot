@@ -3,7 +3,7 @@ name: Telegram Group Bot
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 */3 * * *"
+    - cron: "0 */2 * * *"
 
 jobs:
   send-message:
