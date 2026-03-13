@@ -1,14 +1,14 @@
 import json
 import os
 import sys
-from datetime import datetime, timezone
-
+import time
 import requests
 
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 MESSAGES_FILE = "messages.json"
 TIMEOUT = 30
+DELAY_BETWEEN_MESSAGES = 5  # jeda 5 detik antar pesan
 
 
 def fail(msg: str) -> None:
@@ -29,9 +29,6 @@ def load_messages():
 
     if not isinstance(data, list) or not data:
         fail("messages.json harus berupa array dan minimal berisi 1 item.")
-
-    if len(data) > 5:
-        fail("Maksimal hanya 5 item konten berbeda.")
 
     normalized = []
     for i, item in enumerate(data, start=1):
@@ -64,8 +61,7 @@ def send_text(text: str) -> None:
     payload = {
         "chat_id": CHAT_ID,
         "text": text,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": False
+        "disable_web_page_preview": True
     }
     r = requests.post(telegram_api("sendMessage"), json=payload, timeout=TIMEOUT)
     r.raise_for_status()
@@ -78,8 +74,7 @@ def send_single_photo(photo_url: str, caption: str = "") -> None:
     payload = {
         "chat_id": CHAT_ID,
         "photo": photo_url,
-        "caption": caption,
-        "parse_mode": "HTML"
+        "caption": caption
     }
     r = requests.post(telegram_api("sendPhoto"), json=payload, timeout=TIMEOUT)
     r.raise_for_status()
@@ -90,15 +85,13 @@ def send_single_photo(photo_url: str, caption: str = "") -> None:
 
 def send_media_group(images, caption: str = "") -> None:
     media = []
-    for idx, img in enumerate(images):
+    for idx, img in enumerate(images[:10]):
         item = {
             "type": "photo",
             "media": img
         }
-        # Caption ditaruh di item pertama
         if idx == 0 and caption:
             item["caption"] = caption
-            item["parse_mode"] = "HTML"
         media.append(item)
 
     payload = {
@@ -113,12 +106,21 @@ def send_media_group(images, caption: str = "") -> None:
         fail(f"sendMediaGroup gagal: {data}")
 
 
-def choose_message(messages):
-    # Bergilir berdasarkan jam UTC / 3 jam
-    # Jadi setiap run terjadwal akan pindah ke item berikutnya.
-    slot = datetime.now(timezone.utc).hour // 3
-    index = slot % len(messages)
-    return messages[index], index
+def send_item(item, index: int):
+    text = item["text"]
+    images = item["images"]
+
+    print(f"Mengirim pesan ke-{index}...")
+
+    if images:
+        if len(images) == 1:
+            send_single_photo(images[0], text)
+        else:
+            send_media_group(images, text)
+    else:
+        send_text(text)
+
+    print(f"Pesan ke-{index} berhasil dikirim.")
 
 
 def main():
@@ -128,22 +130,15 @@ def main():
         fail("TELEGRAM_CHAT_ID belum di-set.")
 
     messages = load_messages()
-    item, index = choose_message(messages)
 
-    text = item["text"]
-    images = item["images"]
+    for idx, item in enumerate(messages, start=1):
+        send_item(item, idx)
 
-    print(f"Mengirim item ke-{index + 1} dari total {len(messages)} item.")
+        # beri jeda antar pesan supaya lebih aman/stabil
+        if idx < len(messages):
+            time.sleep(DELAY_BETWEEN_MESSAGES)
 
-    if images:
-        if len(images) == 1:
-            send_single_photo(images[0], text)
-        else:
-            send_media_group(images[:10], text)
-    else:
-        send_text(text)
-
-    print("Pesan berhasil dikirim.")
+    print("Semua pesan berhasil dikirim.")
 
 
 if __name__ == "__main__":
