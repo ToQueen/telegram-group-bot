@@ -8,7 +8,7 @@ BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 MESSAGES_FILE = "messages.json"
 TIMEOUT = 30
-DELAY_BETWEEN_MESSAGES = 5  # jeda 5 detik antar pesan
+DELAY_BETWEEN_MESSAGES = 15  # jeda 15 detik antar pesan
 
 
 def fail(msg: str) -> None:
@@ -143,3 +143,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
