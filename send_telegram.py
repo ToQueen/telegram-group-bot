@@ -8,7 +8,9 @@ BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 MESSAGES_FILE = "messages.json"
 TIMEOUT = 30
-DELAY_BETWEEN_MESSAGES = 15  # jeda 15 detik antar pesan
+DELAY_BETWEEN_MESSAGES = 15
+MAX_CAPTION = 1000
+MAX_RETRY = 3
 
 
 def fail(msg: str) -> None:
@@ -57,34 +59,48 @@ def load_messages():
     return normalized
 
 
-def send_text(text: str) -> None:
+def request_with_retry(method, payload):
+    for attempt in range(1, MAX_RETRY + 1):
+        try:
+            r = requests.post(telegram_api(method), json=payload, timeout=TIMEOUT)
+            data = r.json()
+
+            print(f"Response ({method}):", data)
+
+            if r.status_code == 200 and data.get("ok"):
+                return True
+            else:
+                print(f"Gagal attempt {attempt}: {data}")
+
+        except Exception as e:
+            print(f"Error attempt {attempt}: {e}")
+
+        time.sleep(5)
+
+    return False
+
+
+def send_text(text: str) -> bool:
     payload = {
         "chat_id": CHAT_ID,
         "text": text,
         "disable_web_page_preview": True
     }
-    r = requests.post(telegram_api("sendMessage"), json=payload, timeout=TIMEOUT)
-    r.raise_for_status()
-    data = r.json()
-    if not data.get("ok"):
-        fail(f"sendMessage gagal: {data}")
+    return request_with_retry("sendMessage", payload)
 
 
-def send_single_photo(photo_url: str, caption: str = "") -> None:
+def send_single_photo(photo_url: str, caption: str = "") -> bool:
     payload = {
         "chat_id": CHAT_ID,
         "photo": photo_url,
         "caption": caption
     }
-    r = requests.post(telegram_api("sendPhoto"), json=payload, timeout=TIMEOUT)
-    r.raise_for_status()
-    data = r.json()
-    if not data.get("ok"):
-        fail(f"sendPhoto gagal: {data}")
+    return request_with_retry("sendPhoto", payload)
 
 
-def send_media_group(images, caption: str = "") -> None:
+def send_media_group(images, caption: str = "") -> bool:
     media = []
+
     for idx, img in enumerate(images[:10]):
         item = {
             "type": "photo",
@@ -99,28 +115,33 @@ def send_media_group(images, caption: str = "") -> None:
         "media": media
     }
 
-    r = requests.post(telegram_api("sendMediaGroup"), json=payload, timeout=TIMEOUT)
-    r.raise_for_status()
-    data = r.json()
-    if not data.get("ok"):
-        fail(f"sendMediaGroup gagal: {data}")
+    return request_with_retry("sendMediaGroup", payload)
 
 
 def send_item(item, index: int):
-    text = item["text"]
+    text = item["text"][:MAX_CAPTION]
     images = item["images"]
 
-    print(f"Mengirim pesan ke-{index}...")
+    print(f"\n=== Mengirim pesan ke-{index} ===")
 
-    if images:
-        if len(images) == 1:
-            send_single_photo(images[0], text)
+    success = False
+
+    try:
+        if images:
+            if len(images) == 1:
+                success = send_single_photo(images[0], text)
+            else:
+                success = send_media_group(images, text)
         else:
-            send_media_group(images, text)
-    else:
-        send_text(text)
+            success = send_text(text)
 
-    print(f"Pesan ke-{index} berhasil dikirim.")
+    except Exception as e:
+        print(f"ERROR kirim pesan ke-{index}: {e}")
+
+    if success:
+        print(f"Pesan ke-{index} BERHASIL")
+    else:
+        print(f"Pesan ke-{index} GAGAL (lanjut ke berikutnya)")
 
 
 def main():
@@ -131,16 +152,17 @@ def main():
 
     messages = load_messages()
 
+    print(f"Total pesan: {len(messages)}")
+
     for idx, item in enumerate(messages, start=1):
         send_item(item, idx)
 
-        # beri jeda antar pesan supaya lebih aman/stabil
         if idx < len(messages):
+            print(f"Tunggu {DELAY_BETWEEN_MESSAGES} detik...\n")
             time.sleep(DELAY_BETWEEN_MESSAGES)
 
-    print("Semua pesan berhasil dikirim.")
+    print("\nSELESAI: Semua pesan sudah diproses.")
 
 
 if __name__ == "__main__":
     main()
-
